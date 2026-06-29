@@ -16,8 +16,21 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { to, subject, filename, html } = req.body || {};
-    if (!to || !html) return res.status(400).json({ error: "Missing 'to' or 'html'." });
+    const { to, subject, filename, html, contentBase64, mimeType } = req.body || {};
+    if (!to) return res.status(400).json({ error: "Missing 'to'." });
+
+    // Accept either a pre-built base64 attachment (EPUB) or raw HTML (legacy).
+    let content;
+    let fname;
+    if (contentBase64) {
+      content = contentBase64;
+      fname = filename || "article.epub";
+    } else if (html) {
+      content = Buffer.from(html, "utf-8").toString("base64");
+      fname = filename || "article.html";
+    } else {
+      return res.status(400).json({ error: "Missing 'contentBase64' or 'html'." });
+    }
 
     const apiKey = process.env.RESEND_API_KEY;
     const from = process.env.SEND_FROM;
@@ -25,7 +38,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Server not configured (RESEND_API_KEY / SEND_FROM)." });
     }
 
-    const content = Buffer.from(html, "utf-8").toString("base64");
+    const attachment = { filename: fname, content };
+    if (mimeType) attachment.content_type = mimeType;
 
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -38,12 +52,7 @@ export default async function handler(req, res) {
         to: [to],
         subject: subject || "Article",
         text: "Sent to Kindle by the Send to Kindle (Reader) extension.",
-        attachments: [
-          {
-            filename: filename || "article.html",
-            content, // base64
-          },
-        ],
+        attachments: [attachment],
       }),
     });
 

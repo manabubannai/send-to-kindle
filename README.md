@@ -5,8 +5,22 @@ which breaks because it depends on Amazon's authenticated web endpoints (CORB/CO
 issues under Manifest V3, and frequent backend changes).
 
 This one uses the **stable, documented email method** instead: it extracts the article
-on the page with Mozilla Readability, builds a clean HTML document, and emails it to
-your `@kindle.com` address.
+on the page with Mozilla Readability, **embeds every image into a self-contained file**,
+and emails it to your `@kindle.com` address.
+
+### Why images need special handling
+
+News sites lazy-load images, so the real URL lives in `data-src` / `srcset` /
+`<picture><source>`, not `src` — a naïve extraction ships broken `?` boxes. And even
+with correct remote URLs, Amazon's email converter often fails to fetch external images.
+So the extension:
+
+1. Resolves the real image URLs in the page (de-lazies `data-src`/`srcset`/`<picture>`).
+2. Fetches the bytes in the service worker (host permissions bypass CORS).
+3. Embeds them — **base64-inline** for the HTML preview, **real files inside an EPUB**
+   for sending (the format Amazon converts most reliably).
+
+The EPUB is built by a tiny dependency-free store-only ZIP writer (no JSZip).
 
 ## Architecture
 
@@ -14,10 +28,10 @@ your `@kindle.com` address.
 Chrome tab
   └─ Extension (MV3): popup button
         ├─ Readability extracts the article  (src/vendor/Readability.js + src/background.js)
-        ├─ Builds clean HTML
-        └─ "Download HTML"  → saves locally (no setup)
-           "Send to Kindle" → POSTs to your relay → Resend emails it to @kindle.com
-                               (backend/api/send.js on Vercel)
+        ├─ Resolves lazy images → fetches bytes → embeds them
+        └─ "Download HTML"  → self-contained HTML, images base64-inlined (no setup)
+           "Send to Kindle" → builds EPUB w/ embedded images → POSTs to your relay
+                               → Resend emails it to @kindle.com (backend/api/send.js)
 ```
 
 One architecture serves both **personal use today** and **distribution later**:
@@ -30,8 +44,12 @@ sender address to Amazon's approved list.
 1. Open `chrome://extensions`, enable **Developer mode** (top right).
 2. Click **Load unpacked** and select this folder (`send-to-kindle/`).
 3. Pin it. Open any article and click the toolbar icon → **Download HTML**.
-4. Email that file once to your `@kindle.com` address to confirm it renders well on Kindle.
-   (This validates conversion quality before wiring up automatic sending.)
+4. Open that file locally — images should display (they're embedded), not show broken `?` boxes.
+   This validates extraction quality before wiring up automatic sending.
+
+> On load, Chrome will warn that the extension can "read your data on all websites".
+> That broad host permission is only used to **fetch article images** from any site so
+> they can be embedded; there is no tracking or external reporting.
 
 ### 2. Stand up the relay (one-click sending)
 See [`backend/README.md`](backend/README.md): deploy to Vercel, set `RESEND_API_KEY`
@@ -53,9 +71,10 @@ Now **Send to Kindle** delivers in one click.
 ## Status / roadmap
 
 - [x] Article extraction (Readability) + clean HTML
-- [x] Download HTML (zero-setup)
+- [x] Lazy-image resolution (`data-src`/`srcset`/`<picture>`) + embedding
+- [x] Download HTML with base64-inlined images (zero-setup, self-contained)
+- [x] EPUB output with embedded image files (sent to Kindle)
 - [x] One-click send via Vercel + Resend relay
-- [ ] EPUB output with inlined images (better fidelity than HTML)
 - [ ] Toolbar icons + nicer popup
 - [ ] Multi-tab "bundle into one ebook"
 - [ ] Chrome Web Store packaging (for public distribution)
