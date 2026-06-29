@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Send to Kindle (Reader)",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Extract the current article (images embedded) and send it to your Kindle as a self-contained EPUB. A working alternative to the buggy official extension.",
   "permissions": ["activeTab", "scripting", "storage", "downloads"],
   "host_permissions": ["*://*/*"],
